@@ -1,4 +1,4 @@
-import { processarMensagem }                    from '../services/agente.js'
+import { processarMensagem, extrairDados }       from '../services/agente.js'
 import { getOrCreateLead, updateLead, getLead } from '../services/leads.js'
 import { buscarImoveis, buscarImovelPorCodigo,
          formatarImovel }                        from '../services/imoveis.js'
@@ -52,6 +52,14 @@ export async function webhookRoute(fastify) {
 
       // Processar com o agente
       const resultado = await processarMensagem(message, historico, lead, imovelOrigem)
+
+      // Extrair dados da mensagem automaticamente e salvar no banco
+      if (resultado.proximoPasso && resultado.tipo === 'texto') {
+        const dadosExtraidos = await extrairDados(message, resultado.proximoPasso, lead)
+        if (dadosExtraidos) {
+          await updateLead(phone, { ...dadosExtraidos, status: 'em_qualificacao' })
+        }
+      }
 
       // Processar ação
       if (resultado.tipo === 'acao') {
@@ -108,15 +116,10 @@ export async function webhookRoute(fastify) {
           return
         }
 
-        // Atualizar dados do lead
+        // Atualizar dados do lead (fallback - backend já extrai automaticamente)
         if (acao === 'ATUALIZAR_LEAD') {
-          await updateLead(phone, { ...dados, status: 'em_qualificacao' })
-
-          // Extrair só o texto após o JSON (a próxima pergunta)
-          const textoLimpo = resultado.texto
-            ?.replace(/\{[\s\S]*\}/g, '')  // remove qualquer JSON
-            ?.trim()
-
+          if (dados) await updateLead(phone, { ...dados, status: 'em_qualificacao' })
+          const textoLimpo = resultado.texto?.replace(/\{[\s\S]*\}/g, '').trim()
           if (textoLimpo) {
             await sendMessage(phone, textoLimpo)
             await saveMessage(phone, 'assistant', textoLimpo)
