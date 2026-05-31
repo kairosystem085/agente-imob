@@ -55,7 +55,7 @@ export async function webhookRoute(fastify) {
 
       // Extrair dados da mensagem automaticamente e salvar no banco
       if (resultado.proximoPasso && resultado.tipo === 'texto') {
-        const dadosExtraidos = await extrairDados(message, resultado.proximoPasso, lead)
+        const dadosExtraidos = extrairDados(message, resultado.proximoPasso)
         if (dadosExtraidos) {
           await updateLead(phone, { ...dadosExtraidos, status: 'em_qualificacao' })
         }
@@ -63,53 +63,57 @@ export async function webhookRoute(fastify) {
 
       // Processar ação
       if (resultado.tipo === 'acao') {
-        const { acao, filtros, dados, imovel_codigo, data: dataVisita, horario, motivo } = resultado.dados
+        const { acao, imovel_codigo, data: dataVisita, horario, motivo } = resultado.dados
 
-        // Buscar imóveis compatíveis
+        // Avançar sem coletar dado (lead não sabe/não quer informar)
+        if (acao === 'AVANCAR') {
+          // Reprocessa com o lead atualizado para pegar próxima pergunta
+          const leadAtual = await getLead(phone)
+          const novoResultado = await processarMensagem(message, historico, leadAtual, imovelOrigem)
+          if (novoResultado.tipo === 'texto' && novoResultado.texto) {
+            await sendMessage(phone, novoResultado.texto)
+            await saveMessage(phone, 'assistant', novoResultado.texto)
+          }
+          return
+        }
+
+        // Buscar imóveis usando dados do lead
         if (acao === 'BUSCAR_IMOVEIS') {
+          const leadAtual = await getLead(phone)
+          const filtros = {
+            bairro:      leadAtual.bairros?.[0],
+            aceita_fgts: leadAtual.modelo_compra === 'fgts_financiamento',
+          }
           const imoveis = await buscarImoveis(filtros)
 
           if (imoveis.length === 0) {
             const resposta =
-              `😔 Não encontrei imóveis com essas características no momento.\n\n` +
-              `Mas não se preocupe! Vou cadastrar seu perfil e assim que surgir algo compatível, te aviso. 😊\n\n` +
-              `Posso te ajudar com mais alguma coisa?`
+              `😔 Não encontrei imóveis disponíveis nessa região no momento.\n\n` +
+              `Vou guardar seu perfil e assim que surgir algo, te aviso! 😊`
             await sendMessage(phone, resposta)
             await saveMessage(phone, 'assistant', resposta)
             await updateLead(phone, { status: 'sem_match' })
             return
           }
 
-          // Enviar resumo do perfil + imóveis encontrados
-          const nome = lead.nome || 'Olá'
-          let intro =
-            `✅ *Perfeito, ${nome}!* Aqui está o seu perfil:\n\n` +
-            `🏠 Tipo: ${filtros.tipo || lead.tipo_imovel || 'A definir'}\n` +
-            `📍 Bairro: ${filtros.bairro || lead.bairros?.join(', ') || 'Flexível'}\n` +
-            `🛏️ Quartos: ${filtros.quartos_min || lead.quartos_min || 1}+\n` +
-            `💰 Orçamento: até R$ ${Number(filtros.preco_max || lead.preco_max).toLocaleString('pt-BR')}\n` +
-            `💳 Compra: ${lead.modelo_compra || 'A definir'}\n\n` +
-            `🔍 Encontrei *${imoveis.length} imóvel(is)* para você:`
+          const nome = leadAtual.nome || ''
+          const intro =
+            `🔍 Encontrei *${imoveis.length} imóvel(is)* disponível(is)${leadAtual.bairros?.[0] && leadAtual.bairros[0] !== 'Qualquer região' ? ` em *${leadAtual.bairros[0]}*` : ''}:\n`
 
           await sendMessage(phone, intro)
           await saveMessage(phone, 'assistant', intro)
 
-          // Enviar cada imóvel
           for (const imovel of imoveis) {
             const texto = await formatarImovel(imovel)
             await sendMessage(phone, texto)
-
-            // Enviar foto se tiver
             if (imovel.fotos?.length > 0) {
               await sendImage(phone, imovel.fotos[0], imovel.titulo)
             }
-
-            await new Promise(r => setTimeout(r, 800)) // pequena pausa entre imóveis
+            await new Promise(r => setTimeout(r, 800))
           }
 
           const pergunta =
-            `\nGostou de algum? Me diga o código do imóvel (ex: *AP-01*) e agendamos uma visita! 😊\n\n` +
-            `Ou se preferir, me conta o que não te agradou e busco outras opções.`
+            `Gostou de algum? Me informe o código (ex: *AP-01*) para agendarmos uma visita! 😊`
           await sendMessage(phone, pergunta)
           await saveMessage(phone, 'assistant', pergunta)
           await updateLead(phone, { status: 'qualificado' })
