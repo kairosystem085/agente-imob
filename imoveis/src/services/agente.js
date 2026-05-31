@@ -3,72 +3,54 @@ export async function processarMensagem(mensagem, historico = [], lead = {}, imo
   const NOME_IMOBILIARIA = process.env.NOME_IMOBILIARIA || 'Imobiliária'
 
   const contextoImovel = imovelOrigem
-    ? `O lead veio do anúncio: ${imovelOrigem.codigo} — ${imovelOrigem.titulo}, ${imovelOrigem.bairro}, R$ ${Number(imovelOrigem.preco).toLocaleString('pt-BR')}. Apresente esse imóvel com entusiasmo na primeira mensagem antes de qualificar.`
+    ? `O lead veio do anúncio: ${imovelOrigem.codigo} — ${imovelOrigem.titulo}, ${imovelOrigem.bairro}, R$ ${Number(imovelOrigem.preco).toLocaleString('pt-BR')}. Na primeira mensagem, apresente esse imóvel com entusiasmo antes de qualificar.`
     : 'Lead de busca orgânica.'
 
-  // Estado atual do lead
-  const estado = {
-    tem_nome:          !!lead.nome,
-    tem_tipo:          !!lead.tipo_imovel,
-    tem_bairro:        !!(lead.bairros?.length),
-    tem_quartos:       !!lead.quartos_min,
-    tem_preco:         !!lead.preco_max,
-    tem_modelo_compra: !!lead.modelo_compra,
-    tem_nome_limpo:    lead.nome_limpo !== null && lead.nome_limpo !== undefined,
-    tem_renda:         !!lead.renda_mensal,
-    modelo_compra:     lead.modelo_compra,
-    nome:              lead.nome,
-  }
+  const precisaRenda = ['financiado', 'fgts_financiamento'].includes(lead.modelo_compra)
 
-  const precisaRenda = ['financiado', 'fgts_financiamento'].includes(estado.modelo_compra)
-
-  // Determinar próximo dado a coletar
+  // Determinar próximo passo
   let proximoPasso = null
-  if (!estado.tem_nome)          proximoPasso = 'nome'
-  else if (!estado.tem_tipo)     proximoPasso = 'tipo_imovel'
-  else if (!estado.tem_bairro)   proximoPasso = 'bairro'
-  else if (!estado.tem_quartos)  proximoPasso = 'quartos'
-  else if (!estado.tem_preco)    proximoPasso = 'preco'
-  else if (!estado.tem_modelo_compra) proximoPasso = 'modelo_compra'
-  else if (precisaRenda && !estado.tem_nome_limpo) proximoPasso = 'nome_limpo'
-  else if (precisaRenda && !estado.tem_renda)      proximoPasso = 'renda'
-  else proximoPasso = 'buscar'
+  if (!lead.nome)                                          proximoPasso = 'nome'
+  else if (!lead.bairros?.length)                          proximoPasso = 'bairro'
+  else if (!lead.modelo_compra)                            proximoPasso = 'modelo_compra'
+  else if (precisaRenda && lead.nome_limpo === null && lead.nome_limpo === undefined) proximoPasso = 'nome_limpo'
+  else if (precisaRenda && lead.nome_limpo === null)       proximoPasso = 'nome_limpo'
+  else                                                     proximoPasso = 'buscar'
+
+  // Corrigir lógica de nome_limpo
+  const nomeLimpoColetado = lead.nome_limpo !== null && lead.nome_limpo !== undefined
+  if (!lead.nome)                                          proximoPasso = 'nome'
+  else if (!lead.bairros?.length)                          proximoPasso = 'bairro'
+  else if (!lead.modelo_compra)                            proximoPasso = 'modelo_compra'
+  else if (precisaRenda && !nomeLimpoColetado)             proximoPasso = 'nome_limpo'
+  else                                                     proximoPasso = 'buscar'
 
   const systemPrompt = `Você é ${NOME_AGENTE}, corretora da ${NOME_IMOBILIARIA}.
-Converse de forma natural e calorosa. Seja direta e breve.
+Converse de forma natural, calorosa e direta. Seja breve.
 
 ${contextoImovel}
 
 DADOS JÁ COLETADOS:
-${estado.tem_nome ? `- Nome: ${lead.nome}` : '- Nome: não coletado'}
-${estado.tem_tipo ? `- Tipo: ${lead.tipo_imovel}` : '- Tipo: não coletado'}
-${estado.tem_bairro ? `- Bairro: ${lead.bairros?.join(', ')}` : '- Bairro: não coletado'}
-${estado.tem_quartos ? `- Quartos: ${lead.quartos_min}+` : '- Quartos: não coletado'}
-${estado.tem_preco ? `- Orçamento: R$ ${Number(lead.preco_max).toLocaleString('pt-BR')}` : '- Orçamento: não coletado'}
-${estado.tem_modelo_compra ? `- Compra: ${lead.modelo_compra}` : '- Compra: não coletado'}
-${estado.tem_nome_limpo ? `- Nome limpo: ${lead.nome_limpo ? 'sim' : 'não'}` : ''}
-${estado.tem_renda ? `- Renda: R$ ${Number(lead.renda_mensal).toLocaleString('pt-BR')}` : ''}
+- Nome: ${lead.nome || 'não coletado'}
+- Região/bairro: ${lead.bairros?.join(', ') || 'não coletado'}
+- Modelo de compra: ${lead.modelo_compra || 'não coletado'}
+- Nome limpo: ${nomeLimpoColetado ? (lead.nome_limpo ? 'sim' : 'não') : 'não coletado'}
 
-PRÓXIMO DADO A COLETAR: ${proximoPasso}
+PRÓXIMO PASSO: ${proximoPasso}
 
-INSTRUÇÕES PARA ESTE TURNO:
-${proximoPasso === 'nome' ? `- Se for a primeira mensagem, se apresente: "Olá! Sou a ${NOME_AGENTE} da ${NOME_IMOBILIARIA}. 😊" e pergunte o nome.
-- Se não for primeira mensagem, só pergunte o nome naturalmente.` : ''}
-${proximoPasso === 'tipo_imovel' ? '- Pergunte se busca casa ou apartamento. 1 frase curta.' : ''}
-${proximoPasso === 'bairro' ? '- Pergunte qual bairro ou região prefere. 1 frase.' : ''}
-${proximoPasso === 'quartos' ? '- Pergunte quantos quartos no mínimo. 1 frase.' : ''}
-${proximoPasso === 'preco' ? '- Pergunte o orçamento máximo. 1 frase.' : ''}
-${proximoPasso === 'modelo_compra' ? '- Pergunte se vai financiar, pagar à vista ou usar FGTS. 1 frase.' : ''}
-${proximoPasso === 'nome_limpo' ? '- Pergunte se o nome está limpo no SPC/Serasa. 1 frase discreta.' : ''}
-${proximoPasso === 'renda' ? '- Pergunte a renda familiar mensal. 1 frase.' : ''}
-${proximoPasso === 'buscar' ? `- Diga que vai buscar os melhores imóveis agora. Responda com exatamente: {"acao":"BUSCAR_IMOVEIS"}` : ''}
+${proximoPasso === 'nome' ? `INSTRUÇÃO: ${historico.length === 0 ? `Se apresente brevemente: "Olá! Sou a ${NOME_AGENTE} da ${NOME_IMOBILIARIA} 😊" e pergunte o nome.` : 'Pergunte o nome de forma natural.'}` : ''}
+${proximoPasso === 'bairro' ? 'INSTRUÇÃO: Pergunte qual bairro ou região prefere. 1 frase curta.' : ''}
+${proximoPasso === 'modelo_compra' ? 'INSTRUÇÃO: Pergunte se vai financiar ou pagar à vista. Pode mencionar FGTS também. 1 frase.' : ''}
+${proximoPasso === 'nome_limpo' ? 'INSTRUÇÃO: Pergunte discretamente se o nome está limpo no SPC/Serasa. 1 frase.' : ''}
+${proximoPasso === 'buscar' ? 'INSTRUÇÃO: Diga que vai buscar as opções disponíveis agora. Responda SOMENTE: {"acao":"BUSCAR_IMOVEIS"}' : ''}
 
-REGRAS:
-- NUNCA use o nome do lead dentro da pergunta (não diga "Natan?" ou "João, qual...")
-- NUNCA confirme o que o lead disse ("Entendi que você quer X...")  
+REGRAS ABSOLUTAS:
+- NUNCA mencione o nome do lead nas perguntas
+- NUNCA confirme o que o lead disse
 - NUNCA faça mais de uma pergunta por mensagem
-- Seja calorosa mas direta — máximo 2 frases
-- Quando o próximo passo for "buscar", responda SOMENTE: {"acao":"BUSCAR_IMOVEIS"}`
+- Se o lead disser "não sei", "sem ideia", "tanto faz" para qualquer pergunta que não seja nome_limpo: aceite e avance para o próximo passo respondendo SOMENTE: {"acao":"AVANCAR"}
+- Se o lead quiser ver opções sem responder tudo: aceite e responda SOMENTE: {"acao":"BUSCAR_IMOVEIS"}
+- Máximo 2 frases por resposta`
 
   const messages = [
     ...historico.map(h => ({ role: h.role, content: h.content })),
@@ -83,20 +65,16 @@ REGRAS:
     },
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages
-      ],
-      max_tokens: 256,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      max_tokens: 200,
       temperature: 0.3
     })
   })
 
   const data = await response.json()
   const text = data?.choices?.[0]?.message?.content?.trim() || ''
-  console.log('Groq:', text.slice(0, 200))
+  console.log('Groq:', text)
 
-  // Detectar ação JSON
   try {
     const start = text.indexOf('{')
     const end   = text.lastIndexOf('}')
@@ -109,67 +87,40 @@ REGRAS:
   return { tipo: 'texto', texto: text, proximoPasso }
 }
 
-// Extrai dados da mensagem do lead baseado no contexto
-export async function extrairDados(mensagem, proximoPasso, lead) {
+export function extrairDados(mensagem, proximoPasso) {
   const msg = mensagem.trim().toLowerCase()
 
   switch (proximoPasso) {
     case 'nome':
-      // Capitaliza o nome
       return { nome: mensagem.trim().replace(/\b\w/g, c => c.toUpperCase()) }
 
-    case 'tipo_imovel':
-      if (msg.includes('casa') || msg.includes('sobrado')) return { tipo_imovel: 'casa' }
-      if (msg.includes('apart') || msg.includes('apto')) return { tipo_imovel: 'apartamento' }
-      return null
-
     case 'bairro':
+      // Se não sabe, retorna null mas avança
+      if (msg.includes('não sei') || msg.includes('nao sei') || msg.includes('qualquer') || msg.includes('tanto faz')) {
+        return { bairros: ['Qualquer região'] }
+      }
       return { bairros: [mensagem.trim()] }
-
-    case 'quartos': {
-      const num = mensagem.match(/\d+/)
-      if (num) return { quartos_min: parseInt(num[0]) }
-      if (msg.includes('um') || msg.includes('1')) return { quartos_min: 1 }
-      if (msg.includes('dois') || msg.includes('2')) return { quartos_min: 2 }
-      if (msg.includes('três') || msg.includes('tres') || msg.includes('3')) return { quartos_min: 3 }
-      return null
-    }
-
-    case 'preco': {
-      // Extrai número da mensagem (ex: "200.000", "200000", "200k", "200 mil")
-      const clean = msg.replace(/\./g, '').replace(',', '.')
-      const milMatch = clean.match(/(\d+(?:\.\d+)?)\s*mil/)
-      const kMatch   = clean.match(/(\d+(?:\.\d+)?)\s*k/)
-      const numMatch = clean.match(/(\d{4,})/)
-      if (milMatch) return { preco_max: parseFloat(milMatch[1]) * 1000 }
-      if (kMatch)   return { preco_max: parseFloat(kMatch[1]) * 1000 }
-      if (numMatch) return { preco_max: parseFloat(numMatch[1]) }
-      return null
-    }
 
     case 'modelo_compra':
       if (msg.includes('vista') || msg.includes('avista')) return { modelo_compra: 'a_vista' }
-      if (msg.includes('fgts') && msg.includes('financ')) return { modelo_compra: 'fgts_financiamento' }
-      if (msg.includes('fgts')) return { modelo_compra: 'fgts_financiamento' }
-      if (msg.includes('financ') || msg.includes('banco') || msg.includes('provavelmente')) return { modelo_compra: 'financiado' }
-      if (msg.includes('não sei') || msg.includes('nao sei')) return { modelo_compra: 'nao_sabe' }
+      if (msg.includes('fgts') && msg.includes('financ'))  return { modelo_compra: 'fgts_financiamento' }
+      if (msg.includes('fgts'))                            return { modelo_compra: 'fgts_financiamento' }
+      if (msg.includes('financ') || msg.includes('banco') || msg.includes('provavel') || msg.includes('parcel')) {
+        return { modelo_compra: 'financiado' }
+      }
+      if (msg.includes('não sei') || msg.includes('nao sei') || msg.includes('talvez')) {
+        return { modelo_compra: 'nao_sabe' }
+      }
       return null
 
     case 'nome_limpo':
-      if (msg.includes('sim') || msg.includes('limpo') || msg.includes('está') || msg.includes('ta') || msg.includes('yes')) return { nome_limpo: true }
-      if (msg.includes('não') || msg.includes('nao') || msg.includes('sujo') || msg.includes('restri')) return { nome_limpo: false }
+      if (msg.includes('sim') || msg.includes('limpo') || msg.includes('está') || msg.includes('ta limpo') || msg.includes('yes') || msg.includes('tá')) {
+        return { nome_limpo: true }
+      }
+      if (msg.includes('não') || msg.includes('nao') || msg.includes('sujo') || msg.includes('restri') || msg.includes('negativ')) {
+        return { nome_limpo: false }
+      }
       return null
-
-    case 'renda': {
-      const clean2 = msg.replace(/\./g, '').replace(',', '.')
-      const milMatch2 = clean2.match(/(\d+(?:\.\d+)?)\s*mil/)
-      const kMatch2   = clean2.match(/(\d+(?:\.\d+)?)\s*k/)
-      const numMatch2 = clean2.match(/(\d{3,})/)
-      if (milMatch2) return { renda_mensal: parseFloat(milMatch2[1]) * 1000 }
-      if (kMatch2)   return { renda_mensal: parseFloat(kMatch2[1]) * 1000 }
-      if (numMatch2) return { renda_mensal: parseFloat(numMatch2[1]) }
-      return null
-    }
 
     default:
       return null
