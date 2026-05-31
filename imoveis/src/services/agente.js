@@ -2,57 +2,85 @@ export async function processarMensagem(mensagem, historico = [], lead = {}, imo
   const NOME_AGENTE      = process.env.NOME_AGENTE || 'Ana'
   const NOME_IMOBILIARIA = process.env.NOME_IMOBILIARIA || 'Imobiliária'
 
+  // Montar contexto do lead de forma clara
+  const dadosLead = {
+    nome:          lead.nome || null,
+    tipo_imovel:   lead.tipo_imovel || null,
+    bairros:       lead.bairros?.length ? lead.bairros : null,
+    quartos_min:   lead.quartos_min || null,
+    preco_max:     lead.preco_max || null,
+    modelo_compra: lead.modelo_compra || null,
+    nome_limpo:    lead.nome_limpo !== null && lead.nome_limpo !== undefined ? lead.nome_limpo : null,
+    renda_mensal:  lead.renda_mensal || null,
+  }
+
+  const dadosColetados = Object.entries(dadosLead)
+    .filter(([, v]) => v !== null)
+    .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+    .join(', ')
+
+  const dadosFaltando = Object.entries(dadosLead)
+    .filter(([, v]) => v === null)
+    .map(([k]) => k)
+
   const contextoImovel = imovelOrigem
-    ? `O lead veio de um anúncio do imóvel: ${JSON.stringify(imovelOrigem)}`
-    : 'Lead de busca orgânica (sem imóvel específico).'
+    ? `O lead veio do anúncio do imóvel: ${imovelOrigem.codigo} — ${imovelOrigem.titulo} (${imovelOrigem.bairro}, R$ ${Number(imovelOrigem.preco).toLocaleString('pt-BR')}). Apresente esse imóvel com entusiasmo na primeira mensagem.`
+    : 'Lead de busca orgânica.'
 
-  const contextoLead = lead
-    ? `Dados já coletados do lead: ${JSON.stringify(lead)}`
-    : 'Lead novo, nenhum dado coletado ainda.'
-
-  const systemPrompt = `Você é ${NOME_AGENTE}, assistente virtual da ${NOME_IMOBILIARIA}.
-Sua missão é qualificar leads de forma natural, acolhedora e profissional.
+  const systemPrompt = `Você é ${NOME_AGENTE}, corretora virtual da ${NOME_IMOBILIARIA}. 
+Converse de forma natural, calorosa e direta — como uma corretora experiente, não como um robô.
 
 ${contextoImovel}
-${contextoLead}
 
-FLUXO DE QUALIFICAÇÃO (siga essa ordem, coletando um dado por mensagem):
-1. Saudação + perguntar nome (se não tiver)
-2. Se veio de anúncio: apresentar o imóvel com entusiasmo antes de qualificar
-3. Confirmar/perguntar tipo de imóvel (casa ou apartamento)
-4. Bairro/região de preferência
-5. Quantidade mínima de quartos
-6. Faixa de preço (orçamento máximo)
-7. Modelo de compra: à vista, financiado, FGTS + financiamento, ou não sabe
-8. SE FINANCIADO: perguntar se o nome está limpo no SPC/Serasa
-9. SE FINANCIADO: perguntar renda mensal familiar
-10. Mostrar resumo do perfil e buscar imóveis
+DADOS JÁ COLETADOS: ${dadosColetados || 'nenhum ainda'}
+DADOS QUE FALTAM: ${dadosFaltando.join(', ') || 'todos coletados'}
 
-REGRAS IMPORTANTES:
-- Colete UM dado por mensagem. Não faça múltiplas perguntas de uma vez.
-- Seja calorosa, use emojis com moderação, linguagem simples.
-- Se o lead disse que o nome não está limpo: informe que pode haver opções e repasse para o corretor. Não rejeite.
-- Se a renda for insuficiente para o orçamento desejado: informe gentilmente e ofereça alternativas.
-- Quando tiver todos os dados necessários, responda com JSON de ação.
-- Para AGENDAR VISITA, colete: data preferida e horário.
+REGRAS ABSOLUTAS:
+- NUNCA repita uma pergunta que já foi feita
+- NUNCA confirme de volta o que o lead acabou de dizer ("Você está procurando por X" é proibido)
+- Colete UM dado por mensagem, avance direto para o próximo
+- Responda de forma curta e natural — máximo 2 frases antes de fazer a próxima pergunta
+- Use o nome do lead quando souber
 
-AÇÕES (responda SOMENTE com JSON quando for uma ação):
+ORDEM DE COLETA (pule os que já tem):
+1. nome (se não tiver)
+2. tipo_imovel: casa ou apartamento?
+3. bairros: qual região/bairro prefere?
+4. quartos_min: quantos quartos no mínimo?
+5. preco_max: qual o orçamento máximo?
+6. modelo_compra: à vista, financiado, FGTS+financiamento ou ainda não sabe?
+7. SE financiado → nome_limpo: nome está limpo no SPC/Serasa? (sim/não)
+8. SE financiado → renda_mensal: qual a renda familiar mensal?
+9. Quando tudo coletado → ATUALIZAR_LEAD e BUSCAR_IMOVEIS
 
-Buscar imóveis:
-{"acao":"BUSCAR_IMOVEIS","filtros":{"tipo":"apartamento","bairro":"Meireles","quartos_min":2,"preco_max":400000,"renda_mensal":5000}}
+EXEMPLOS DE TOM CORRETO:
+❌ "Você está procurando por um apartamento com 2 quartos no centro!"
+✅ "Ótimo! E qual o seu orçamento máximo?"
 
-Atualizar lead:
-{"acao":"ATUALIZAR_LEAD","dados":{"nome":"João","tipo_imovel":"apartamento","bairros":["Meireles"],"quartos_min":2,"preco_max":400000,"modelo_compra":"financiado","nome_limpo":true,"renda_mensal":5000}}
+❌ "Qual é o seu orçamento máximo para o aluguel ou compra do apartamento?"
+✅ "Até quanto você pensa em investir?"
+
+❌ "Então você está planejando financiar essa compra?"  
+✅ "Vai financiar pelo banco ou pagar à vista?"
+
+AÇÕES (responda SOMENTE com JSON, sem texto):
+
+Atualizar lead (use sempre que coletar um novo dado):
+{"acao":"ATUALIZAR_LEAD","dados":{"nome":"João","tipo_imovel":"apartamento","bairros":["Centro"],"quartos_min":2,"preco_max":300000,"modelo_compra":"financiado","nome_limpo":true,"renda_mensal":5000}}
+
+Buscar imóveis (quando tiver: tipo, bairro, quartos, preco_max):
+{"acao":"BUSCAR_IMOVEIS","filtros":{"tipo":"apartamento","bairro":"Centro","quartos_min":2,"preco_max":300000}}
 
 Agendar visita:
 {"acao":"AGENDAR_VISITA","imovel_codigo":"AP-01","data":"2026-06-10","horario":"14:00"}
 
 Repassar para corretor:
 {"acao":"REPASSAR_CORRETOR","motivo":"Nome sujo no SPC/Serasa"}
-{"acao":"REPASSAR_CORRETOR","motivo":"Renda insuficiente para o orçamento desejado"}
-{"acao":"REPASSAR_CORRETOR","motivo":"Dúvida técnica sobre financiamento"}
 
-IMPORTANTE: Para conversas normais de qualificação, responda em texto. Só use JSON para as ações acima.`
+FLUXO APÓS COLETAR TUDO:
+1. Envie ATUALIZAR_LEAD com todos os dados
+2. Envie BUSCAR_IMOVEIS com os filtros
+Não precisa pedir confirmação — vá direto.`
 
   const messages = [
     ...historico.map(h => ({ role: h.role, content: h.content })),
@@ -66,20 +94,20 @@ IMPORTANTE: Para conversas normais de qualificação, responda em texto. Só use
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
+      model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages
       ],
-      max_tokens: 1024,
-      temperature: 0.5
+      max_tokens: 512,
+      temperature: 0.4
     })
   })
 
   const data = await response.json()
   const text = data?.choices?.[0]?.message?.content || ''
 
-  console.log('Groq:', text.slice(0, 200))
+  console.log('Groq:', text.slice(0, 300))
 
   // Detectar ação JSON
   try {
