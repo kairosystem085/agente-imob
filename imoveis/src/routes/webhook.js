@@ -1,7 +1,7 @@
 import { processarMensagem, extrairDados }       from '../services/agente.js'
 import { getOrCreateLead, updateLead, getLead } from '../services/leads.js'
 import { buscarImoveis, buscarImovelPorCodigo,
-         formatarImovel }                        from '../services/imoveis.js'
+         formatarImovel, buscarRegioes }           from '../services/imoveis.js'
 import { agendarVisita }                         from '../services/visitas.js'
 import { repassarParaCorretor }                  from '../services/chatwoot.js'
 import { getHistory, saveMessage }               from '../services/memory.js'
@@ -77,29 +77,53 @@ export async function webhookRoute(fastify) {
           return
         }
 
+        // Listar regiões disponíveis
+        if (acao === 'LISTAR_REGIOES') {
+          const regioes = await buscarRegioes()
+          let msg = `🏘️ Temos imóveis disponíveis nas seguintes regiões:\n\n`
+          regioes.forEach(r => {
+            const tipos = r.tipos.map(t => t === 'apartamento' ? 'apartamentos' : 'casas').join(' e ')
+            msg += `📍 *${r.bairro}* — ${r.cidade} (${tipos})\n`
+          })
+          msg += `\nQual dessas regiões te interessa?`
+          await sendMessage(phone, msg)
+          await saveMessage(phone, 'assistant', msg)
+          return
+        }
+
         // Buscar imóveis usando dados do lead
         if (acao === 'BUSCAR_IMOVEIS') {
           const leadAtual = await getLead(phone)
           const filtros = {
-            bairro:      leadAtual.bairros?.[0],
+            bairro:      leadAtual.bairros?.[0] !== 'Qualquer região' ? leadAtual.bairros?.[0] : null,
             aceita_fgts: leadAtual.modelo_compra === 'fgts_financiamento',
           }
           const imoveis = await buscarImoveis(filtros)
 
           if (imoveis.length === 0) {
-            const resposta =
-              `😔 Não encontrei imóveis disponíveis nessa região no momento.\n\n` +
-              `Vou guardar seu perfil e assim que surgir algo, te aviso! 😊`
-            await sendMessage(phone, resposta)
-            await saveMessage(phone, 'assistant', resposta)
-            await updateLead(phone, { status: 'sem_match' })
+            // Repassa para corretor em vez de descartar
+            await updateLead(phone, {
+              status: 'repassar_corretor',
+              obs_corretor: `Nenhum imóvel disponível na região: ${leadAtual.bairros?.join(', ') || 'não informada'}`
+            })
+            await repassarParaCorretor(phone, leadAtual, `Nenhum imóvel disponível na região informada (${leadAtual.bairros?.join(', ')})`)
+
+            const regioes = await buscarRegioes()
+            let msg = `Ainda não temos imóveis disponíveis nessa região. 😔\n\n`
+            if (regioes.length > 0) {
+              msg += `Mas temos opções incríveis em:\n`
+              regioes.forEach(r => { msg += `📍 *${r.bairro}* — ${r.cidade}\n` })
+              msg += `\nAlguma dessas regiões te interessaria?`
+            } else {
+              msg += `Um de nossos corretores vai entrar em contato com as melhores opções para você! 😊`
+            }
+
+            await sendMessage(phone, msg)
+            await saveMessage(phone, 'assistant', msg)
             return
           }
 
-          const nome = leadAtual.nome || ''
-          const intro =
-            `🔍 Encontrei *${imoveis.length} imóvel(is)* disponível(is)${leadAtual.bairros?.[0] && leadAtual.bairros[0] !== 'Qualquer região' ? ` em *${leadAtual.bairros[0]}*` : ''}:\n`
-
+          const intro = `🔍 Encontrei *${imoveis.length} imóvel(is)* disponível(is)${filtros.bairro ? ` em *${filtros.bairro}*` : ''}:\n`
           await sendMessage(phone, intro)
           await saveMessage(phone, 'assistant', intro)
 
@@ -112,8 +136,7 @@ export async function webhookRoute(fastify) {
             await new Promise(r => setTimeout(r, 800))
           }
 
-          const pergunta =
-            `Gostou de algum? Me informe o código (ex: *AP-01*) para agendarmos uma visita! 😊`
+          const pergunta = `Gostou de algum? Me informe o código (ex: *AP-01*) para agendarmos uma visita! 😊`
           await sendMessage(phone, pergunta)
           await saveMessage(phone, 'assistant', pergunta)
           await updateLead(phone, { status: 'qualificado' })
