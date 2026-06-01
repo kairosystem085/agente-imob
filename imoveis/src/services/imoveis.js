@@ -28,6 +28,29 @@ export async function buscarImoveis(filtros = {}) {
   return data || []
 }
 
+export async function buscarRegioes() {
+  const { data } = await supabase
+    .from('imoveis')
+    .select('bairro, cidade, tipo')
+    .eq('disponivel', true)
+    .order('bairro')
+
+  if (!data?.length) return []
+
+  // Agrupar por bairro
+  const regioes = {}
+  data.forEach(i => {
+    if (!regioes[i.bairro]) regioes[i.bairro] = { cidade: i.cidade, tipos: new Set() }
+    regioes[i.bairro].tipos.add(i.tipo)
+  })
+
+  return Object.entries(regioes).map(([bairro, info]) => ({
+    bairro,
+    cidade: info.cidade,
+    tipos: [...info.tipos]
+  }))
+}
+
 export async function buscarImovelPorCodigo(codigo) {
   const { data } = await supabase
     .from('imoveis')
