@@ -15,6 +15,28 @@ function normalizarTexto(texto = '') {
     .trim()
 }
 
+function extrairTelefone(texto = '') {
+  const numeros = String(texto).replace(/\D/g, '')
+  if (numeros.length < 10 || numeros.length > 13) return null
+  return numeros
+}
+
+function ultimaRespostaPediuTelefone(historico = []) {
+  const ultimas = historico.slice(-4)
+
+  return ultimas.some(item => {
+    const role = item.role || item.tipo
+    const texto = normalizarTexto(item.content || item.texto || item.message || '')
+
+    return role !== 'user' && (
+      texto.includes('telefone') ||
+      texto.includes('numero') ||
+      texto.includes('contato') ||
+      texto.includes('entrar em contato')
+    )
+  })
+}
+
 async function detectarRegiaoNaMensagem(message) {
   const regioes = await buscarRegioes()
   const mensagemNormalizada = normalizarTexto(message)
@@ -23,6 +45,13 @@ async function detectarRegiaoNaMensagem(message) {
     const bairro = normalizarTexto(r.bairro)
     return mensagemNormalizada === bairro || mensagemNormalizada.includes(bairro)
   })
+}
+
+async function detectarCodigoImovel(message) {
+  const codigoMatch = String(message).match(/\b([A-Z]{2}-\d{1,4})\b/i)
+  if (!codigoMatch) return null
+
+  return buscarImovelPorCodigo(codigoMatch[1].toUpperCase())
 }
 
 export async function webhookRoute(fastify) {
@@ -44,40 +73,66 @@ export async function webhookRoute(fastify) {
       let lead = await getOrCreateLead(phone)
       const historico = await getHistory(phone)
 
-      let imovelOrigem = null
-      if (!lead.imovel_origem) {
-        const codigoMatch = message.match(/\b([A-Z]{2}-\d{2,4})\b/i)
-        if (codigoMatch) {
-          imovelOrigem = await buscarImovelPorCodigo(codigoMatch[1])
-          if (imovelOrigem) {
-            await updateLead(phone, { imovel_origem: imovelOrigem.codigo })
-            lead = await getLead(phone)
-          }
-        }
-      } else {
-        imovelOrigem = await buscarImovelPorCodigo(lead.imovel_origem)
-      }
-
       if (!lead.nome && name) {
         await updateLead(phone, { nome: name })
         lead = await getLead(phone)
       }
 
+      let imovelOrigem = null
+
+      const imovelDigitado = await detectarCodigoImovel(message)
+      if (imovelDigitado) {
+        imovelOrigem = imovelDigitado
+
+        await updateLead(phone, {
+          imovel_origem: imovelDigitado.codigo,
+          bairros: [imovelDigitado.bairro],
+          status: 'interessado_visita'
+        })
+
+        lead = await getLead(phone)
+      } else if (lead.imovel_origem) {
+        imovelOrigem = await buscarImovelPorCodigo(lead.imovel_origem)
+      }
+
       const regiaoEscolhida = await detectarRegiaoNaMensagem(message)
-      if (regiaoEscolhida) {
+      if (regiaoEscolhida && !imovelDigitado) {
         await updateLead(phone, {
           bairros: [regiaoEscolhida.bairro],
           status: 'em_qualificacao'
         })
+
         lead = await getLead(phone)
       }
 
       await saveMessage(phone, 'user', message)
 
+      const telefoneInformado = extrairTelefone(message)
+
+      if (telefoneInformado && ultimaRespostaPediuTelefone(historico)) {
+        await updateLead(phone, {
+          telefone: telefoneInformado,
+          status: 'aguardando_data_visita'
+        })
+
+        const imovelSelecionado = imovelOrigem || (
+          lead.imovel_origem ? await buscarImovelPorCodigo(lead.imovel_origem) : null
+        )
+
+        const msg = imovelSelecionado
+          ? `Perfeito! Já anotei seu telefone. 😊\n\nQual melhor dia e horário para visitar o imóvel *${imovelSelecionado.codigo}*?`
+          : `Perfeito! Já anotei seu telefone. 😊\n\nQual melhor dia e horário para a visita?`
+
+        await sendMessage(phone, msg)
+        await saveMessage(phone, 'assistant', msg)
+        return
+      }
+
       const resultado = await processarMensagem(message, historico, lead, imovelOrigem)
 
       if (resultado.proximoPasso && resultado.tipo === 'texto') {
         const dadosExtraidos = extrairDados(message, resultado.proximoPasso)
+
         if (dadosExtraidos) {
           await updateLead(phone, { ...dadosExtraidos, status: 'em_qualificacao' })
           lead = await getLead(phone)
@@ -125,6 +180,21 @@ export async function webhookRoute(fastify) {
         }
 
         if (acao === 'BUSCAR_IMOVEIS') {
+          const telefoneNaMensagem = extrairTelefone(message)
+
+          if (telefoneNaMensagem) {
+            await updateLead(phone, {
+              telefone: telefoneNaMensagem,
+              status: 'aguardando_data_visita'
+            })
+
+            const msg = `Perfeito! Já anotei seu telefone. 😊\n\nQual melhor dia e horário para a visita?`
+
+            await sendMessage(phone, msg)
+            await saveMessage(phone, 'assistant', msg)
+            return
+          }
+
           let leadAtual = await getLead(phone)
 
           const regiaoConfirmada = await detectarRegiaoNaMensagem(message)
@@ -216,7 +286,10 @@ export async function webhookRoute(fastify) {
         }
 
         if (acao === 'AGENDAR_VISITA') {
-          const imovel = await buscarImovelPorCodigo(imovel_codigo)
+          const leadAtual = await getLead(phone)
+          const codigoImovel = imovel_codigo || leadAtual.imovel_origem
+
+          const imovel = await buscarImovelPorCodigo(codigoImovel)
 
           if (!imovel) {
             await sendMessage(phone, `Não encontrei o imóvel com esse código. Pode confirmar?`)
@@ -224,7 +297,7 @@ export async function webhookRoute(fastify) {
           }
 
           await agendarVisita({
-            leadId:   lead.id,
+            leadId:   leadAtual.id,
             imovelId: imovel.id,
             phone,
             dataVisita,
@@ -246,7 +319,7 @@ export async function webhookRoute(fastify) {
 
           const notif =
             `🔔 *Nova visita agendada!*\n\n` +
-            `👤 Lead: ${lead.nome || phone}\n` +
+            `👤 Lead: ${leadAtual.nome || phone}\n` +
             `📱 Tel: ${phone}\n` +
             `🏠 Imóvel: ${imovel.titulo} (${imovel.codigo})\n` +
             `📅 ${new Date(dataVisita).toLocaleDateString('pt-BR')} às ${horario}`
