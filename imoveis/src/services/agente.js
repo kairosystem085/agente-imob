@@ -7,23 +7,15 @@ export async function processarMensagem(mensagem, historico = [], lead = {}, imo
     : 'Lead de busca orgânica.'
 
   const precisaRenda = ['financiado', 'fgts_financiamento'].includes(lead.modelo_compra)
+  const nomeLimpoColetado = lead.nome_limpo !== null && lead.nome_limpo !== undefined
 
   // Determinar próximo passo
   let proximoPasso = null
-  if (!lead.nome)                                          proximoPasso = 'nome'
-  else if (!lead.bairros?.length)                          proximoPasso = 'bairro'
-  else if (!lead.modelo_compra)                            proximoPasso = 'modelo_compra'
-  else if (precisaRenda && lead.nome_limpo === null && lead.nome_limpo === undefined) proximoPasso = 'nome_limpo'
-  else if (precisaRenda && lead.nome_limpo === null)       proximoPasso = 'nome_limpo'
-  else                                                     proximoPasso = 'buscar'
-
-  // Corrigir lógica de nome_limpo
-  const nomeLimpoColetado = lead.nome_limpo !== null && lead.nome_limpo !== undefined
-  if (!lead.nome)                                          proximoPasso = 'nome'
-  else if (!lead.bairros?.length)                          proximoPasso = 'bairro'
-  else if (!lead.modelo_compra)                            proximoPasso = 'modelo_compra'
-  else if (precisaRenda && !nomeLimpoColetado)             proximoPasso = 'nome_limpo'
-  else                                                     proximoPasso = 'buscar'
+  if (!lead.nome)                                proximoPasso = 'nome'
+  else if (!lead.bairros?.length)                proximoPasso = 'bairro'
+  else if (!lead.modelo_compra)                  proximoPasso = 'modelo_compra'
+  else if (precisaRenda && !nomeLimpoColetado)   proximoPasso = 'nome_limpo'
+  else                                           proximoPasso = 'buscar'
 
   const systemPrompt = `Você é ${NOME_AGENTE}, corretora da ${NOME_IMOBILIARIA}.
 Converse de forma natural, calorosa e direta. Seja breve.
@@ -40,9 +32,9 @@ PRÓXIMO PASSO: ${proximoPasso}
 
 ${proximoPasso === 'nome' ? `INSTRUÇÃO: ${historico.length === 0 ? `Se apresente brevemente: "Olá! Sou a ${NOME_AGENTE} da ${NOME_IMOBILIARIA} 😊" e pergunte o nome.` : 'Pergunte o nome de forma natural.'}` : ''}
 ${proximoPasso === 'bairro' ? 'INSTRUÇÃO: Pergunte qual bairro ou região prefere. 1 frase curta.' : ''}
-${proximoPasso === 'modelo_compra' ? 'INSTRUÇÃO: Pergunte se vai financiar ou pagar à vista. Pode mencionar FGTS também. 1 frase.' : ''}
-${proximoPasso === 'nome_limpo' ? 'INSTRUÇÃO: Pergunte discretamente se o nome está limpo no SPC/Serasa. 1 frase.' : ''}
-${proximoPasso === 'buscar' ? 'INSTRUÇÃO: Diga que vai buscar as opções disponíveis agora. Responda SOMENTE: {"acao":"BUSCAR_IMOVEIS"}' : ''}
+${proximoPasso === 'modelo_compra' ? 'INSTRUÇÃO: Pergunte se vai financiar, pagar à vista ou usar FGTS. 1 frase curta e direta.' : ''}
+${proximoPasso === 'nome_limpo' ? 'INSTRUÇÃO: Pergunte discretamente se o nome está limpo no SPC/Serasa para verificar as condições de financiamento. 1 frase.' : ''}
+${proximoPasso === 'buscar' ? `INSTRUÇÃO: Diga que vai buscar as opções agora. Responda SOMENTE: {"acao":"BUSCAR_IMOVEIS"}` : ''}
 
 REGRAS ABSOLUTAS:
 - NUNCA mencione o nome do lead nas perguntas
@@ -103,16 +95,20 @@ export function extrairDados(mensagem, proximoPasso) {
       return { bairros: [mensagem.trim()] }
 
     case 'modelo_compra':
-      if (msg.includes('vista') || msg.includes('avista')) return { modelo_compra: 'a_vista' }
-      if (msg.includes('fgts') && msg.includes('financ'))  return { modelo_compra: 'fgts_financiamento' }
-      if (msg.includes('fgts'))                            return { modelo_compra: 'fgts_financiamento' }
-      if (msg.includes('financ') || msg.includes('banco') || msg.includes('provavel') || msg.includes('parcel')) {
-        return { modelo_compra: 'financiado' }
-      }
-      if (msg.includes('não sei') || msg.includes('nao sei') || msg.includes('talvez')) {
-        return { modelo_compra: 'nao_sabe' }
-      }
-      return null
+      if (msg.includes('vista') || msg.includes('avista'))        return { modelo_compra: 'a_vista' }
+      if (msg.includes('fgts') && msg.includes('financ'))         return { modelo_compra: 'fgts_financiamento' }
+      if (msg.includes('fgts'))                                   return { modelo_compra: 'fgts_financiamento' }
+      if (msg.includes('financ') || msg.includes('banco') ||
+          msg.includes('provavel') || msg.includes('parcel') ||
+          msg.includes('vai ser') || msg.includes('sera') ||
+          msg.includes('será') || msg.includes('credito') ||
+          msg.includes('crédito') || msg.includes('prestac') ||
+          msg.includes('prestação'))                              return { modelo_compra: 'financiado' }
+      if (msg.includes('não sei') || msg.includes('nao sei') ||
+          msg.includes('talvez') || msg.includes('ainda nao') ||
+          msg.includes('ainda não'))                              return { modelo_compra: 'nao_sabe' }
+      // Se chegou aqui e tem alguma resposta, assume financiado como padrão
+      return { modelo_compra: 'financiado' }
 
     case 'nome_limpo':
       if (msg.includes('sim') || msg.includes('limpo') || msg.includes('está') || msg.includes('ta limpo') || msg.includes('yes') || msg.includes('tá')) {
