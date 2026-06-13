@@ -14,7 +14,7 @@ export function jsonError(message: string, status = 400) {
 
 export function requireAdminSecret(request: NextRequest) {
   const expectedSecret = process.env.ADMIN_SECRET;
-  const receivedSecret = request.headers.get("x-admin-secret");
+  const receivedSecret = request.headers.get("x-admin-secret") ?? request.cookies.get("admin_auth")?.value;
 
   if (!expectedSecret || receivedSecret !== expectedSecret) {
     return false;
