@@ -12,14 +12,14 @@ export default async function CatalogPage({ params }: { params: Promise<{ slug: 
           <Link href="/" className="font-semibold text-ink">ImobIA</Link>
           <a href="https://wa.me/5585999990001" className="flex items-center gap-2 rounded-md bg-emerald px-4 py-2 text-sm font-semibold text-white">
             <MessageCircle className="size-4" />
-            Chamar no WhatsApp
+            Falar com atendimento
           </a>
         </nav>
 
         <section className="py-12">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-signal">Catalogo publico</p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-normal text-ink">{slug === organization.slug ? organization.name : "Imobiliaria"}</h1>
-          <p className="mt-4 max-w-2xl text-slate-600">Imoveis ativos, filtros e atendimento direto para registrar interesse.</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-signal">Imoveis selecionados</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-normal text-ink">{slug === organization.slug ? organization.name : "Atendimento imobiliario"}</h1>
+          <p className="mt-4 max-w-2xl text-slate-600">Veja opcoes disponiveis e envie seu interesse para receber atendimento pelo WhatsApp.</p>
         </section>
 
         <section className="mb-6 grid gap-3 md:grid-cols-4">
