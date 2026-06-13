@@ -29,6 +29,7 @@ export default function HomePage() {
             <span className="text-lg font-semibold tracking-normal">ImobIA</span>
           </div>
           <div className="flex items-center gap-3">
+            <Link href="/admin" className="text-sm font-medium text-slate-600">Modo agencia</Link>
             <Link href="/login" className="text-sm font-medium text-slate-600">Entrar</Link>
             <Link href="/dashboard" className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white shadow-soft">Conhecer painel</Link>
           </div>
