@@ -2,39 +2,38 @@ insert into organizations (
   id,
   name,
   slug,
-  organization_type,
-  lead_distribution_strategy,
+  type,
+  creci,
   phone,
-  email
+  whatsapp_number,
+  plan
 ) values (
   '00000000-0000-0000-0000-000000000001',
   'Joao Corretor',
   'joao-corretor',
-  'solo_broker',
-  'manual',
+  'broker',
+  'CRECI 00000',
   '+5585999990001',
-  'contato@joaocorretor.com'
-);
-
--- User rows in auth.users must be created by Supabase Auth before inserting real profiles.
--- Use these rows as reference data after creating matching auth users.
+  '+5585999990001',
+  'active'
+) on conflict (slug) do update set
+  name = excluded.name,
+  whatsapp_number = excluded.whatsapp_number,
+  updated_at = now();
 
 insert into properties (
   organization_id,
   title,
   description,
-  property_type,
+  type,
   purpose,
   price,
   city,
-  district,
+  neighborhood,
   bedrooms,
-  bathrooms,
-  parking_spaces,
-  area,
-  featured,
-  status
+  area_m2,
+  active
 ) values
-('00000000-0000-0000-0000-000000000001', 'Apartamento vista mar no Meireles', 'Apartamento pronto para morar.', 'apartment', 'sale', 740000, 'Fortaleza', 'Meireles', 3, 3, 2, 112, true, 'active'),
-('00000000-0000-0000-0000-000000000001', 'Casa duplex em condominio', 'Casa ampla com area gourmet.', 'house', 'sale', 980000, 'Eusebio', 'Centro', 4, 5, 4, 245, true, 'active'),
-('00000000-0000-0000-0000-000000000001', 'Studio mobiliado para aluguel', 'Studio compacto perto de servicos.', 'apartment', 'rent', 2800, 'Fortaleza', 'Aldeota', 1, 1, 1, 42, false, 'active');
+('00000000-0000-0000-0000-000000000001', 'Apartamento vista mar no Meireles', 'Apartamento pronto para morar.', 'apartamento', 'venda', 740000, 'Fortaleza', 'Meireles', 3, 112, true),
+('00000000-0000-0000-0000-000000000001', 'Casa duplex em condominio', 'Casa ampla com area gourmet.', 'casa', 'venda', 980000, 'Eusebio', 'Centro', 4, 245, true),
+('00000000-0000-0000-0000-000000000001', 'Studio mobiliado para aluguel', 'Studio compacto perto de servicos.', 'apartamento', 'aluguel', 2800, 'Fortaleza', 'Aldeota', 1, 42, true);
