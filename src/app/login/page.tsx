@@ -5,8 +5,8 @@ export default function LoginPage() {
     <main className="grid min-h-screen place-items-center px-6">
       <section className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-soft">
         <Link href="/" className="text-sm font-semibold text-signal">ImobIA</Link>
-        <h1 className="mt-6 text-3xl font-semibold text-ink">Entrar</h1>
-        <p className="mt-2 text-sm text-slate-600">A autenticacao sera conectada ao Supabase Auth.</p>
+        <h1 className="mt-6 text-3xl font-semibold text-ink">Acessar painel</h1>
+        <p className="mt-2 text-sm text-slate-600">Entrada restrita para corretores e equipes cadastradas pela agencia.</p>
         <form className="mt-6 space-y-4">
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Email</span>
