@@ -117,10 +117,8 @@ export async function processMessage({ organizationId, organizationName, phone, 
 
   const history = asConversationHistory(conversation?.history);
   const now = new Date().toISOString();
-  const updatedHistory: ConversationEntry[] = [
-    ...history,
-    { role: "user", content: message, created_at: now }
-  ].slice(-20);
+  const userEntry: ConversationEntry = { role: "user", content: message, created_at: now };
+  const updatedHistory: ConversationEntry[] = [...history, userEntry].slice(-20);
 
   const systemPrompt = buildSystemPrompt(organizationName, (properties ?? []) as PropertyPortfolio[]);
   const response = await chatCompletion(
@@ -128,10 +126,12 @@ export async function processMessage({ organizationId, organizationName, phone, 
     systemPrompt
   );
 
-  const finalHistory: ConversationEntry[] = [
-    ...updatedHistory,
-    { role: "assistant", content: response, created_at: new Date().toISOString() }
-  ].slice(-20);
+  const assistantEntry: ConversationEntry = {
+    role: "assistant",
+    content: response,
+    created_at: new Date().toISOString()
+  };
+  const finalHistory: ConversationEntry[] = [...updatedHistory, assistantEntry].slice(-20);
 
   await supabase.from("conversations").upsert({
     organization_id: organizationId,
