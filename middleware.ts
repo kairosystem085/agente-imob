@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
-        path: "/admin"
+        path: "/"
       });
       return response;
     }
