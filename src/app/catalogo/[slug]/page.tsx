@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { Building2, MessageCircle } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
 type CatalogOrganization = {
   id: string;
   name: string;
