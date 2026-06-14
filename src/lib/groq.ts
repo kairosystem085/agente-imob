@@ -1,29 +1,35 @@
-import Groq from "groq-sdk";
-
-type ChatRole = "system" | "user" | "assistant";
+export type ChatRole = "system" | "user" | "assistant";
 
 export type ChatMessage = {
   role: ChatRole;
   content: string;
 };
 
-function createGroqClient() {
+export async function chatCompletion(messages: ChatMessage[]) {
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
-    throw new Error("Missing GROQ_API_KEY.");
+    return "Recebi sua mensagem. Vou te fazer algumas perguntas para entender melhor o imovel ideal.";
   }
 
-  return new Groq({ apiKey });
-}
-
-export async function chatCompletion(messages: ChatMessage[], systemPrompt: string): Promise<string> {
-  const groq = createGroqClient();
-  const completion = await groq.chat.completions.create({
-    model: "llama3-70b-8192",
-    temperature: 0.4,
-    messages: [{ role: "system", content: systemPrompt }, ...messages]
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
+      messages,
+      temperature: 0.4,
+      max_tokens: 450
+    })
   });
 
-  return completion.choices[0]?.message?.content?.trim() ?? "Posso te ajudar a encontrar o imovel ideal. Me conta o que voce procura?";
+  if (!response.ok) {
+    return "Recebi sua mensagem. Vou organizar as informacoes e um corretor vai te chamar em breve.";
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || "Certo, vou continuar seu atendimento por aqui.";
 }
