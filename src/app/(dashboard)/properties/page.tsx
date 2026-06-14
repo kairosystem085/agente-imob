@@ -14,8 +14,9 @@ export default function PropertiesPage() {
   useEffect(() => setState(loadDemoState()), []);
   if (!state) return <div className="p-6">Carregando...</div>;
 
-  const organization = getActiveOrganization(state);
-  const properties = state.properties.filter((property) => property.organization_id === organization.id);
+  const currentState = state;
+  const organization = getActiveOrganization(currentState);
+  const properties = currentState.properties.filter((property) => property.organization_id === organization.id);
 
   function updateField(field: keyof PropertyForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -23,22 +24,32 @@ export default function PropertiesPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextState: DemoState = {
-      ...state,
-      properties: [
-        { id: makeId("prop"), organization_id: organization.id, title: form.title, type: form.type, purpose: form.purpose, price: Number(form.price || 0), neighborhood: form.neighborhood, city: form.city, bedrooms: form.bedrooms ? Number(form.bedrooms) : null, area_m2: form.area_m2 ? Number(form.area_m2) : null, description: form.description, photos: [], active: true, created_at: new Date().toISOString() },
-        ...state.properties
-      ]
-    };
-    setState(nextState);
-    saveDemoState(nextState);
+    setState((previousState) => {
+      if (!previousState) return previousState;
+      const activeOrganization = getActiveOrganization(previousState);
+      const nextState: DemoState = {
+        ...previousState,
+        properties: [
+          { id: makeId("prop"), organization_id: activeOrganization.id, title: form.title, type: form.type, purpose: form.purpose, price: Number(form.price || 0), neighborhood: form.neighborhood, city: form.city, bedrooms: form.bedrooms ? Number(form.bedrooms) : null, area_m2: form.area_m2 ? Number(form.area_m2) : null, description: form.description, photos: [], active: true, created_at: new Date().toISOString() },
+          ...previousState.properties
+        ]
+      };
+      saveDemoState(nextState);
+      return nextState;
+    });
     setForm(initialForm);
   }
 
   function toggleProperty(id: string) {
-    const nextState = { ...state, properties: state.properties.map((property) => property.id === id ? { ...property, active: !property.active } : property) };
-    setState(nextState);
-    saveDemoState(nextState);
+    setState((previousState) => {
+      if (!previousState) return previousState;
+      const nextState: DemoState = {
+        ...previousState,
+        properties: previousState.properties.map((property) => property.id === id ? { ...property, active: !property.active } : property)
+      };
+      saveDemoState(nextState);
+      return nextState;
+    });
   }
 
   return (
