@@ -9,20 +9,6 @@ type CookieToSet = {
 
 const brokerProtectedPrefixes = ["/dashboard", "/properties", "/leads", "/appointments", "/whatsapp"];
 
-function isDemoMode() {
-  return process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
-}
-
-function isPublicRoute(pathname: string) {
-  return (
-    pathname === "/" ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/catalogo") ||
-    pathname.startsWith("/api/webhook") ||
-    pathname.startsWith("/api/catalogo")
-  );
-}
-
 function isAdminRoute(pathname: string) {
   return pathname === "/admin" || pathname.startsWith("/admin/");
 }
@@ -34,8 +20,6 @@ function isBrokerProtectedRoute(pathname: string) {
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
   const { pathname } = request.nextUrl;
-
-  if (isDemoMode()) return response;
 
   if (isAdminRoute(pathname) && pathname !== "/admin/login") {
     const secretFromQuery = request.nextUrl.searchParams.get("secret");
@@ -61,12 +45,14 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  if (isPublicRoute(pathname) || !isBrokerProtectedRoute(pathname)) return response;
+  if (!isBrokerProtectedRoute(pathname)) return response;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey) return response;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return response;
+  }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
@@ -80,7 +66,9 @@ export async function middleware(request: NextRequest) {
     }
   });
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
 
   if (!user) {
     const loginUrl = request.nextUrl.clone();
@@ -93,12 +81,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/admin/:path*",
-    "/dashboard/:path*",
-    "/properties/:path*",
-    "/leads/:path*",
-    "/appointments/:path*",
-    "/whatsapp/:path*"
-  ]
+  matcher: ["/admin/:path*", "/dashboard/:path*", "/properties/:path*", "/leads/:path*", "/appointments/:path*", "/whatsapp/:path*"]
 };
