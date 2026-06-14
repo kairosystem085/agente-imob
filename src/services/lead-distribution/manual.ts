@@ -7,6 +7,6 @@ export function assignLeadManually(lead: Lead, broker: Profile) {
 
   return {
     ...lead,
-    brokerId: broker.id
+    broker_id: broker.id
   };
 }
