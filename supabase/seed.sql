@@ -2,38 +2,40 @@ insert into organizations (
   id,
   name,
   slug,
-  type,
-  creci,
+  organization_type,
+  lead_distribution_strategy,
   phone,
-  whatsapp_number,
-  plan
+  email,
+  business_hours
 ) values (
   '00000000-0000-0000-0000-000000000001',
   'Joao Corretor',
   'joao-corretor',
-  'broker',
-  'CRECI 00000',
+  'solo_broker',
+  'manual',
   '+5585999990001',
-  '+5585999990001',
-  'active'
+  'joao@imobia.app',
+  '{}'::jsonb
 ) on conflict (slug) do update set
   name = excluded.name,
-  whatsapp_number = excluded.whatsapp_number,
+  phone = excluded.phone,
   updated_at = now();
 
 insert into properties (
   organization_id,
   title,
   description,
-  type,
+  property_type,
   purpose,
   price,
   city,
-  neighborhood,
+  district,
   bedrooms,
-  area_m2,
-  active
+  bathrooms,
+  parking_spaces,
+  area,
+  status
 ) values
-('00000000-0000-0000-0000-000000000001', 'Apartamento vista mar no Meireles', 'Apartamento pronto para morar.', 'apartamento', 'venda', 740000, 'Fortaleza', 'Meireles', 3, 112, true),
-('00000000-0000-0000-0000-000000000001', 'Casa duplex em condominio', 'Casa ampla com area gourmet.', 'casa', 'venda', 980000, 'Eusebio', 'Centro', 4, 245, true),
-('00000000-0000-0000-0000-000000000001', 'Studio mobiliado para aluguel', 'Studio compacto perto de servicos.', 'apartamento', 'aluguel', 2800, 'Fortaleza', 'Aldeota', 1, 42, true);
+('00000000-0000-0000-0000-000000000001', 'Apartamento vista mar no Meireles', 'Apartamento pronto para morar.', 'apartment', 'sale', 740000, 'Fortaleza', 'Meireles', 3, 2, 2, 112, 'active'),
+('00000000-0000-0000-0000-000000000001', 'Casa duplex em condominio', 'Casa ampla com area gourmet.', 'house', 'sale', 980000, 'Eusebio', 'Centro', 4, 4, 3, 245, 'active'),
+('00000000-0000-0000-0000-000000000001', 'Studio mobiliado para aluguel', 'Studio compacto perto de servicos.', 'apartment', 'rent', 2800, 'Fortaleza', 'Aldeota', 1, 1, 1, 42, 'active');
