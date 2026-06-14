@@ -1,7 +1,7 @@
 export type AppointmentRequest = {
-  leadId: string;
-  brokerId: string;
-  propertyId: string;
+  lead_id: string;
+  broker_id: string;
+  property_id: string;
   date: string;
   time: string;
 };
