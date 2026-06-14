@@ -12,13 +12,20 @@ export default function LeadsPage() {
   useEffect(() => setState(loadDemoState()), []);
   if (!state) return <div className="p-6">Carregando...</div>;
 
-  const organization = getActiveOrganization(state);
-  const leads = state.leads.filter((lead) => lead.organization_id === organization.id);
+  const currentState = state;
+  const organization = getActiveOrganization(currentState);
+  const leads = currentState.leads.filter((lead) => lead.organization_id === organization.id);
 
   function updateStatus(id: string, status: DemoLead["status"]) {
-    const nextState = { ...state, leads: state.leads.map((lead) => lead.id === id ? { ...lead, status } : lead) };
-    setState(nextState);
-    saveDemoState(nextState);
+    setState((previousState) => {
+      if (!previousState) return previousState;
+      const nextState: DemoState = {
+        ...previousState,
+        leads: previousState.leads.map((lead) => lead.id === id ? { ...lead, status } : lead)
+      };
+      saveDemoState(nextState);
+      return nextState;
+    });
   }
 
   return (
