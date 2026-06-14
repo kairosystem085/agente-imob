@@ -9,6 +9,10 @@ type CookieToSet = {
 
 const brokerProtectedPrefixes = ["/dashboard", "/properties", "/leads", "/appointments", "/whatsapp"];
 
+function isDemoMode() {
+  return process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
+}
+
 function isPublicRoute(pathname: string) {
   return (
     pathname === "/" ||
@@ -30,6 +34,8 @@ function isBrokerProtectedRoute(pathname: string) {
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
   const { pathname } = request.nextUrl;
+
+  if (isDemoMode()) return response;
 
   if (isAdminRoute(pathname) && pathname !== "/admin/login") {
     const secretFromQuery = request.nextUrl.searchParams.get("secret");
