@@ -30,22 +30,24 @@ export async function getAppContext() {
 
   if (!user) redirect("/login");
 
-  const { data: profile, error: profileError } = await supabase
+  const { data: profileData, error: profileError } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
-    .maybeSingle<AppProfile>();
+    .maybeSingle();
 
   if (profileError) throw profileError;
-  if (!profile) redirect("/login?missingProfile=1");
+  if (!profileData) redirect("/login?missingProfile=1");
 
-  const { data: organization, error: organizationError } = await supabase
+  const profile = profileData as AppProfile;
+  const { data: organizationData, error: organizationError } = await supabase
     .from("organizations")
     .select("*")
     .eq("id", profile.organization_id)
-    .single<AppOrganization>();
+    .single();
 
   if (organizationError) throw organizationError;
+  const organization = organizationData as AppOrganization;
 
   return { supabase, user, profile, organization };
 }
