@@ -1,67 +1,126 @@
-"use client";
-
+import { revalidatePath } from "next/cache";
 import { Building2, Plus } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
 import { PageHeader } from "@/components/ui/page-header";
-import { getActiveOrganization, loadDemoState, makeId, saveDemoState, type DemoState } from "@/lib/demo-store";
+import { getAppContext } from "@/lib/app-context";
+import { formatCurrency } from "@/lib/formatters";
 
-type PropertyForm = { title: string; type: string; purpose: string; price: string; neighborhood: string; city: string; bedrooms: string; area_m2: string; description: string };
-const initialForm: PropertyForm = { title: "", type: "apartamento", purpose: "venda", price: "", neighborhood: "", city: "", bedrooms: "", area_m2: "", description: "" };
+async function createProperty(formData: FormData) {
+  "use server";
 
-export default function PropertiesPage() {
-  const [state, setState] = useState<DemoState | null>(null);
-  const [form, setForm] = useState<PropertyForm>(initialForm);
-  useEffect(() => setState(loadDemoState()), []);
-  if (!state) return <div className="p-6">Carregando...</div>;
+  const { supabase, profile, organization } = await getAppContext();
+  const imageUrl = String(formData.get("image_url") ?? "").trim();
 
-  const currentState = state;
-  const organization = getActiveOrganization(currentState);
-  const properties = currentState.properties.filter((property) => property.organization_id === organization.id);
+  const { data: property, error } = await supabase
+    .from("properties")
+    .insert({
+      organization_id: organization.id,
+      broker_id: profile.id,
+      title: String(formData.get("title") ?? "").trim(),
+      description: String(formData.get("description") ?? "").trim(),
+      property_type: String(formData.get("property_type") ?? "apartment"),
+      purpose: String(formData.get("purpose") ?? "sale"),
+      price: Number(formData.get("price") ?? 0),
+      city: String(formData.get("city") ?? "").trim(),
+      district: String(formData.get("district") ?? "").trim(),
+      address: String(formData.get("address") ?? "").trim(),
+      bedrooms: Number(formData.get("bedrooms") ?? 0),
+      bathrooms: Number(formData.get("bathrooms") ?? 0),
+      parking_spaces: Number(formData.get("parking_spaces") ?? 0),
+      area: Number(formData.get("area") || 0),
+      status: "active"
+    })
+    .select("id")
+    .single();
 
-  function updateField(field: keyof PropertyForm, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
-  }
+  if (error) throw error;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setState((previousState) => {
-      if (!previousState) return previousState;
-      const activeOrganization = getActiveOrganization(previousState);
-      const nextState: DemoState = {
-        ...previousState,
-        properties: [
-          { id: makeId("prop"), organization_id: activeOrganization.id, title: form.title, type: form.type, purpose: form.purpose, price: Number(form.price || 0), neighborhood: form.neighborhood, city: form.city, bedrooms: form.bedrooms ? Number(form.bedrooms) : null, area_m2: form.area_m2 ? Number(form.area_m2) : null, description: form.description, photos: [], active: true, created_at: new Date().toISOString() },
-          ...previousState.properties
-        ]
-      };
-      saveDemoState(nextState);
-      return nextState;
-    });
-    setForm(initialForm);
-  }
-
-  function toggleProperty(id: string) {
-    setState((previousState) => {
-      if (!previousState) return previousState;
-      const nextState: DemoState = {
-        ...previousState,
-        properties: previousState.properties.map((property) => property.id === id ? { ...property, active: !property.active } : property)
-      };
-      saveDemoState(nextState);
-      return nextState;
+  if (imageUrl && property) {
+    await supabase.from("property_images").insert({
+      organization_id: organization.id,
+      property_id: property.id,
+      url: imageUrl,
+      position: 0
     });
   }
+
+  revalidatePath("/properties");
+  revalidatePath("/dashboard");
+  revalidatePath(`/catalogo/${organization.slug}`);
+}
+
+async function toggleProperty(formData: FormData) {
+  "use server";
+
+  const { supabase, organization } = await getAppContext();
+  const id = String(formData.get("id"));
+  const currentStatus = String(formData.get("status"));
+
+  const { error } = await supabase
+    .from("properties")
+    .update({ status: currentStatus === "active" ? "inactive" : "active" })
+    .eq("id", id)
+    .eq("organization_id", organization.id);
+
+  if (error) throw error;
+
+  revalidatePath("/properties");
+  revalidatePath("/dashboard");
+  revalidatePath(`/catalogo/${organization.slug}`);
+}
+
+export default async function PropertiesPage() {
+  const { supabase, profile, organization } = await getAppContext();
+  const canSeeAll = profile.role === "owner" || profile.role === "manager";
+
+  let query = supabase
+    .from("properties")
+    .select("id, title, property_type, purpose, price, city, district, bedrooms, status, property_images(url, position)")
+    .eq("organization_id", organization.id)
+    .order("created_at", { ascending: false });
+
+  if (!canSeeAll) query = query.eq("broker_id", profile.id);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const properties = data ?? [];
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Carteira" title="Imoveis" description="Cadastre os imoveis que aparecem no catalogo e sao usados pelo agente para sugerir opcoes aos clientes." />
-      <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <PageHeader eyebrow="Carteira" title="Imoveis" description="Cadastre os imoveis reais que aparecem no catalogo e alimentam o agente de WhatsApp." />
+
+      <form action={createProperty} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-5 flex items-center gap-3"><Plus className="size-5 text-signal" /><h2 className="text-lg font-semibold text-ink">Novo imovel</h2></div>
-        <div className="grid gap-4 md:grid-cols-3"><input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Titulo" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal md:col-span-2" /><input value={form.price} onChange={(event) => updateField("price", event.target.value)} placeholder="Preco" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" /><select value={form.type} onChange={(event) => updateField("type", event.target.value)} className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal"><option value="apartamento">Apartamento</option><option value="casa">Casa</option><option value="terreno">Terreno</option><option value="cobertura">Cobertura</option><option value="sala_comercial">Sala comercial</option></select><select value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal"><option value="venda">Venda</option><option value="aluguel">Aluguel</option></select><input value={form.city} onChange={(event) => updateField("city", event.target.value)} placeholder="Cidade" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" /><input value={form.neighborhood} onChange={(event) => updateField("neighborhood", event.target.value)} placeholder="Bairro" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" /><input value={form.bedrooms} onChange={(event) => updateField("bedrooms", event.target.value)} placeholder="Quartos" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" /><input value={form.area_m2} onChange={(event) => updateField("area_m2", event.target.value)} placeholder="Area m2" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" /></div>
-        <textarea value={form.description} onChange={(event) => updateField("description", event.target.value)} placeholder="Descricao" className="mt-4 min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-signal" />
+        <div className="grid gap-4 md:grid-cols-3">
+          <input name="title" required placeholder="Titulo" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal md:col-span-2" />
+          <input name="price" required type="number" min="0" placeholder="Preco" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <select name="property_type" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal"><option value="apartment">Apartamento</option><option value="house">Casa</option><option value="land">Terreno</option><option value="commercial">Comercial</option></select>
+          <select name="purpose" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal"><option value="sale">Venda</option><option value="rent">Aluguel</option></select>
+          <input name="city" required placeholder="Cidade" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <input name="district" required placeholder="Bairro" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <input name="address" placeholder="Endereco" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <input name="bedrooms" type="number" min="0" placeholder="Quartos" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <input name="bathrooms" type="number" min="0" placeholder="Banheiros" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <input name="parking_spaces" type="number" min="0" placeholder="Vagas" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <input name="area" type="number" min="0" placeholder="Area m2" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
+          <input name="image_url" placeholder="URL da foto principal" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal md:col-span-2" />
+        </div>
+        <textarea name="description" placeholder="Descricao" className="mt-4 min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-signal" />
         <button type="submit" className="mt-4 rounded-md bg-signal px-4 py-2 text-sm font-semibold text-white">Salvar imovel</button>
       </form>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{properties.map((property) => <article key={property.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 grid h-40 place-items-center rounded-md bg-slate-100"><Building2 className="size-9 text-slate-400" /></div><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold text-ink">{property.title}</h2><p className="mt-1 text-sm text-slate-500">{property.neighborhood}, {property.city}</p></div><button type="button" onClick={() => toggleProperty(property.id)} className={`rounded-md px-2 py-1 text-xs font-semibold ${property.active ? "bg-emerald/10 text-emerald" : "bg-slate-100 text-slate-600"}`}>{property.active ? "Ativo" : "Inativo"}</button></div><p className="mt-4 text-xl font-semibold text-ink">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(property.price)}</p><div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-600"><span className="rounded-md bg-slate-100 px-2 py-1">{property.type}</span><span className="rounded-md bg-slate-100 px-2 py-1">{property.purpose}</span>{property.bedrooms ? <span className="rounded-md bg-slate-100 px-2 py-1">{property.bedrooms} quartos</span> : null}</div></article>)}</div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {properties.map((property) => {
+          const image = property.property_images?.sort((a, b) => a.position - b.position)[0]?.url;
+          return (
+            <article key={property.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 grid h-40 place-items-center overflow-hidden rounded-md bg-slate-100">{image ? <img src={image} alt={property.title} className="h-full w-full object-cover" /> : <Building2 className="size-9 text-slate-400" />}</div>
+              <div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold text-ink">{property.title}</h2><p className="mt-1 text-sm text-slate-500">{property.district}, {property.city}</p></div><form action={toggleProperty}><input type="hidden" name="id" value={property.id} /><input type="hidden" name="status" value={property.status} /><button type="submit" className={`rounded-md px-2 py-1 text-xs font-semibold ${property.status === "active" ? "bg-emerald/10 text-emerald" : "bg-slate-100 text-slate-600"}`}>{property.status === "active" ? "Ativo" : "Inativo"}</button></form></div>
+              <p className="mt-4 text-xl font-semibold text-ink">{formatCurrency(property.price)}</p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-600"><span className="rounded-md bg-slate-100 px-2 py-1">{property.property_type}</span><span className="rounded-md bg-slate-100 px-2 py-1">{property.purpose}</span><span className="rounded-md bg-slate-100 px-2 py-1">{property.bedrooms} quartos</span></div>
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
