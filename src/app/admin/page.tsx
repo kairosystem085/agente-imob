@@ -6,6 +6,11 @@ import { useState, type FormEvent } from "react";
 
 type CreatedClient = { organization: { name: string; slug: string }; user: { email: string }; login_url: string };
 
+function getAdminSecretFromUrl() {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("secret") ?? "";
+}
+
 export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +22,15 @@ export default function AdminPage() {
     setError(null);
     setCreatedClient(null);
     const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/admin/clients", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(form.entries())) });
+    const adminSecret = getAdminSecretFromUrl();
+    const response = await fetch("/api/admin/clients", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(adminSecret ? { "x-admin-secret": adminSecret } : {})
+      },
+      body: JSON.stringify(Object.fromEntries(form.entries()))
+    });
     const data = await response.json();
     setLoading(false);
     if (!response.ok) { setError(data.error ?? "Nao foi possivel cadastrar o cliente."); return; }
