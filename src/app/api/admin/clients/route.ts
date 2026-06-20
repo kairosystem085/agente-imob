@@ -4,7 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 function isAuthorized(request: NextRequest) {
   const expectedSecret = process.env.ADMIN_SECRET;
   const secretFromCookie = request.cookies.get("admin_auth")?.value;
-  return Boolean(expectedSecret && secretFromCookie === expectedSecret);
+  const secretFromHeader = request.headers.get("x-admin-secret");
+  return Boolean(expectedSecret && (secretFromCookie === expectedSecret || secretFromHeader === expectedSecret));
 }
 
 function slugify(value: string) {
