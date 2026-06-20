@@ -3,12 +3,67 @@ import { Building2, Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { getAppContext } from "@/lib/app-context";
 import { formatCurrency } from "@/lib/formatters";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+const propertyImagesBucket = "property-images";
+const maxImageSize = 5 * 1024 * 1024;
+const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
+
+function sanitizeFileName(fileName: string) {
+  const extension = fileName.split(".").pop()?.toLowerCase() || "jpg";
+  const name = fileName
+    .replace(/\.[^/.]+$/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "foto";
+
+  return `${name}.${extension}`;
+}
+
+async function ensurePropertyImagesBucket() {
+  const admin = createAdminClient();
+  const { data: buckets } = await admin.storage.listBuckets();
+  const exists = buckets?.some((bucket) => bucket.name === propertyImagesBucket);
+
+  if (!exists) {
+    const { error } = await admin.storage.createBucket(propertyImagesBucket, {
+      public: true,
+      fileSizeLimit: maxImageSize,
+      allowedMimeTypes: allowedImageTypes
+    });
+
+    if (error && !error.message.toLowerCase().includes("already exists")) throw error;
+  }
+
+  return admin;
+}
+
+async function uploadPropertyImage(organizationId: string, propertyId: string, file: File) {
+  if (!file || file.size === 0) return null;
+  if (!allowedImageTypes.includes(file.type)) throw new Error("Envie uma imagem JPG, PNG ou WEBP.");
+  if (file.size > maxImageSize) throw new Error("A foto deve ter no maximo 5MB.");
+
+  const admin = await ensurePropertyImagesBucket();
+  const filePath = `${organizationId}/${propertyId}/${Date.now()}-${sanitizeFileName(file.name)}`;
+  const { error } = await admin.storage.from(propertyImagesBucket).upload(filePath, file, {
+    cacheControl: "31536000",
+    contentType: file.type,
+    upsert: false
+  });
+
+  if (error) throw error;
+
+  const { data } = admin.storage.from(propertyImagesBucket).getPublicUrl(filePath);
+  return data.publicUrl;
+}
 
 async function createProperty(formData: FormData) {
   "use server";
 
   const { supabase, profile, organization } = await getAppContext();
-  const imageUrl = String(formData.get("image_url") ?? "").trim();
+  const imageFile = formData.get("image_file");
 
   const { data: property, error } = await supabase
     .from("properties")
@@ -34,13 +89,17 @@ async function createProperty(formData: FormData) {
 
   if (error) throw error;
 
-  if (imageUrl && property) {
-    await supabase.from("property_images").insert({
-      organization_id: organization.id,
-      property_id: property.id,
-      url: imageUrl,
-      position: 0
-    });
+  if (property && imageFile instanceof File) {
+    const publicUrl = await uploadPropertyImage(organization.id, property.id, imageFile);
+
+    if (publicUrl) {
+      await supabase.from("property_images").insert({
+        organization_id: organization.id,
+        property_id: property.id,
+        url: publicUrl,
+        position: 0
+      });
+    }
   }
 
   revalidatePath("/properties");
@@ -102,7 +161,10 @@ export default async function PropertiesPage() {
           <input name="bathrooms" type="number" min="0" placeholder="Banheiros" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
           <input name="parking_spaces" type="number" min="0" placeholder="Vagas" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
           <input name="area" type="number" min="0" placeholder="Area m2" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal" />
-          <input name="image_url" placeholder="URL da foto principal" className="h-11 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-signal md:col-span-2" />
+          <label className="flex h-11 cursor-pointer items-center rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-500 outline-none focus-within:border-signal md:col-span-2">
+            <span>Foto principal do imovel</span>
+            <input name="image_file" type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" />
+          </label>
         </div>
         <textarea name="description" placeholder="Descricao" className="mt-4 min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-signal" />
         <button type="submit" className="mt-4 rounded-md bg-signal px-4 py-2 text-sm font-semibold text-white">Salvar imovel</button>
